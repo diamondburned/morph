@@ -1,33 +1,22 @@
-{ stdenv, fetchgit, buildGoPackage, go-bindata, lib,
-  version ? "dev"
+{ stdenv, fetchgit, buildGoModule, go-bindata, lib
+, version ? "dev"
 }:
 
-with builtins; with lib;
-let
-  blacklistedDirs = [ "nix-packaging" "vendor" "^\\..+$" ];
-  whitelistedFiles = [ "^.+\\.nix$" "^.+\\.go$" ];
-  filterList = file: list: elem true (map (pattern: isList (match pattern file)) list);
-  srcFilter = path: type: (
-    if type == "regular" then filterList (baseNameOf path) whitelistedFiles
-    else if type == "directory" then !filterList (baseNameOf path) blacklistedDirs
-    else false);
-in
-buildGoPackage rec {
+buildGoModule rec {
   name = "morph-unstable-${version}";
   inherit version;
 
-  goPackagePath = "github.com/dbcdk/morph";
-
   buildInputs = [ go-bindata ];
 
-  src = filterSource srcFilter ./..;
-  goDeps = ./deps.nix;
+  src = import ./source.nix { inherit lib; };
 
   buildFlagsArray = ''
     -ldflags=
     -X
     main.version=${version}
   '';
+
+  modSha256 = "0kwwvd979zhdml3shw96cwyh84qn7k7p4yy0qsjiwi9ncnjb1ca6";
 
   prePatch = ''
     go-bindata -pkg assets -o assets/assets.go data/
@@ -38,10 +27,10 @@ buildGoPackage rec {
     cp -v $src/data/*.nix $lib
   '';
 
-  outputs = [ "out" "bin" "lib" ];
+  outputs = [ "out" "lib" ];
 
   meta = {
-    homepage = "https://github.com/dbcdk/morph";
+    homepage = "https://github.com/DBCDK/morph";
     description = "Morph is a NixOS host manager written in Golang.";
   };
 }
