@@ -129,6 +129,8 @@ Files can be uploaded without ever ending up in the nix store, by specifying eac
 
 See `examples/secrets.nix` or the type definitions in `data/options.nix`.
 
+To upload secrets, use the `morph upload-secrets` subcommand, or pass `--upload-secrets` to `morph deploy`.
+
 *Note:*
 Morph will automatically create directories parent to `secret.Destination` if they don't exist.
 New dirs will be owned by root:root and have mode 755 (drwxr-xr-x).
@@ -148,6 +150,38 @@ There are no guarantees about the order health checks are run in, so if you need
 Health checks will be repeated until success, and the interval can be configured with the `period` option (see `data/options.nix` for details).
 
 It is currently possible to have expressions like `"test \"$(systemctl list-units --failed --no-legend --no-pager |wc -l)\" -eq 0"` (count number of failed systemd units, fail if non-zero) as the first argument in a cmd-healthcheck. This works, but is discouraged, and might break at any time.
+
+### Advanced configuration
+
+**nix.conf-options:** The "network"-attrset supports a sub-attrset named "nixConfig". Options configured here will pass `--option <name> <value>` to all nix commands.
+Note: these options apply to an entire deployment and are *not* configurable on per-host basis.
+The default is an empty set, meaning that the nix configuration is inherited from the build environment. See `man nix.conf`.
+
+**special deployment options:**
+
+(per-host granularity)
+
+`buildOnly` makes morph skip the "push" and "switch" steps for the given host, even if "morph deploy" or "morph push" is executed. (default: false)
+
+`substituteOnDestination` Sets the `--substitute-on-destination` flag on nix copy, allowing for the deployment target to use substitutes. See `nix copy --help`. (default: false)
+
+
+Example usage of `nixConfig` and deployment module options:
+```
+network = {
+    nixConfig = {
+        "extra-sandbox-paths" = "/foo/bar";
+    };
+};
+
+machine1 = { ... }: {
+    deployment.buildOnly = true;
+};
+
+machine2 = { ... }: {
+    deployment.substituteOnDestination = true;
+};
+```
 
 
 ## Hacking morph

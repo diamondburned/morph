@@ -31,13 +31,15 @@ type Context interface {
 }
 
 type Host interface {
+	GetName() string
 	GetTargetHost() string
+	GetTargetUser() string
 }
 
 type SSHContext struct {
 	sudoPassword       string
 	AskForSudoPassword bool
-	Username           string
+	DefaultUsername    string
 	IdentityFile       string
 	SkipHostKeyCheck   bool
 }
@@ -90,11 +92,12 @@ func (ctx *SSHContext) sshArgs(host Host, transfer *FileTransfer) (cmd string, a
 		args = append(args, transfer.Source)
 		hostAndDestination += ":" + transfer.Destination
 	}
-	if ctx.Username != "" {
-		args = append(args, ctx.Username+"@"+hostAndDestination)
-	} else {
-		args = append(args, hostAndDestination)
+	if host.GetTargetUser() != "" {
+		hostAndDestination = host.GetTargetUser() + "@" + hostAndDestination
+	} else if ctx.DefaultUsername != "" {
+		hostAndDestination = ctx.DefaultUsername + "@" + hostAndDestination
 	}
+	args = append(args, hostAndDestination)
 
 	return
 }
@@ -178,7 +181,15 @@ func (sshCtx *SSHContext) CmdInteractive(host Host, timeout int, parts ...string
 
 func askForSudoPassword() (string, error) {
 	fmt.Fprint(os.Stderr, "Please enter remote sudo password: ")
-	bytePassword, err := terminal.ReadPassword(int(syscall.Stdin))
+	stdin := int(syscall.Stdin)
+	state, err := terminal.GetState(stdin)
+	if err != nil {
+		return "", err
+	}
+	utils.AddFinalizer(func() {
+		terminal.Restore(stdin, state)
+	})
+	bytePassword, err := terminal.ReadPassword(stdin)
 	if err != nil {
 		return "", err
 	}
@@ -219,11 +230,7 @@ func (ctx *SSHContext) ActivateConfiguration(host Host, configuration string, ac
 		cmd *exec.Cmd
 		err error
 	)
-	if action == "dry-activate" {
-		cmd, err = ctx.Cmd(host, args...)
-	} else {
-		cmd, err = ctx.SudoCmd(host, args...)
-	}
+	cmd, err = ctx.SudoCmd(host, args...)
 	if err != nil {
 		return err
 	}
@@ -269,8 +276,8 @@ func (ctx *SSHContext) MakeTempFile(host Host) (path string, err error) {
 	err = cmd.Run()
 	if err != nil {
 		errorMessage := fmt.Sprintf(
-			"Error on remote host %s:\nCouldn't create temporary file using mktemp\n\nOriginal error:\n%s",
-			host.GetTargetHost(), stderr.String(),
+			"Error on remote host %s (%s):\nCouldn't create temporary file using mktemp\n\nOriginal error:\n%s",
+			host.GetName(), host.GetTargetHost(), stderr.String(),
 		)
 		return "", errors.New(errorMessage)
 	}
@@ -290,8 +297,8 @@ func (ctx *SSHContext) UploadFile(host Host, source string, destination string) 
 	data, err := cmd.CombinedOutput()
 	if err != nil {
 		errorMessage := fmt.Sprintf(
-			"Error on remote host %s:\nCouldn't upload file: %s -> %s\n\nOriginal error:\n%s",
-			host.GetTargetHost(), source, destination, string(data),
+			"Error on remote host %s (%s):\nCouldn't upload file: %s -> %s\n\nOriginal error:\n%s",
+			host.GetName(), host.GetTargetHost(), source, destination, string(data),
 		)
 		return errors.New(errorMessage)
 	}
